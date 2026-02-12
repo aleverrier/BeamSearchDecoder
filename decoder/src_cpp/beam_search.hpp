@@ -26,6 +26,7 @@
 #include <chrono>
 #include <stdexcept> // required for std::runtime_error
 #include <set>
+#include <cstdint>
 
 #include "math.h"
 #include "sparse_matrix_base.hpp"
@@ -61,6 +62,7 @@ namespace ldpc {
             std::vector<double> initial_log_prob_ratios;
             int iterations;
             bool converge;
+            uint64_t decode_calls;
 
             BeamSearchDecoder(
                     BpSparse &parity_check_matrix,
@@ -73,7 +75,7 @@ namespace ldpc {
                     pcm(parity_check_matrix), channel_probabilities(std::move(channel_probabilities)),
                     check_count(pcm.m), bit_count(pcm.n), max_rounds(max_rounds), beam_width(beam_width), num_results(num_results),
                     initial_iters(initial_iters), iters_per_round(iters_per_round),
-                    iterations(0) //the parity check matrix is passed in by reference
+                    iterations(0), decode_calls(0) //the parity check matrix is passed in by reference
             {
 
                 this->initial_log_prob_ratios.resize(bit_count);
@@ -93,9 +95,19 @@ namespace ldpc {
 
             void initialise_log_domain_bp() {
                 // initialise BP
+                const uint64_t shot = this->decode_calls;
                 for (int i = 0; i < this->bit_count; i++) {
-                    this->initial_log_prob_ratios[i] = std::log(
-                            (1 - this->channel_probabilities[i]) / this->channel_probabilities[i]);
+                    double base_llr = std::log((1 - this->channel_probabilities[i]) / this->channel_probabilities[i]);
+                    // Deterministic micro-jitter to break exact LLR ties on highly symmetric instances.
+                    uint64_t h = (static_cast<uint64_t>(i) + 1ULL) * 0x9E3779B97F4A7C15ULL;
+                    h ^= (shot + 1ULL) * 0xBF58476D1CE4E5B9ULL;
+                    h ^= (h >> 30);
+                    h *= 0xBF58476D1CE4E5B9ULL;
+                    h ^= (h >> 27);
+                    h *= 0x94D049BB133111EBULL;
+                    h ^= (h >> 31);
+                    double centered = (static_cast<double>(h & 0xFFFFULL) - 32768.0) / 32768.0;
+                    this->initial_log_prob_ratios[i] = base_llr + (1e-10 * centered);
 
                     for (auto &e: this->pcm.iterate_column(i)) {
                         e.bit_to_check_msg = this->initial_log_prob_ratios[i];
@@ -106,6 +118,8 @@ namespace ldpc {
             std::vector<uint8_t> &decode(std::vector<uint8_t> &syndrome) {
 
                 this->converge = 0;
+                this->decode_calls += 1;
+                std::fill(this->decoding.begin(), this->decoding.end(), 0);
 
                 this->initialise_log_domain_bp();
 
@@ -140,7 +154,7 @@ namespace ldpc {
                         double temp = std::numeric_limits<double>::max();
 
                         for (auto &e: this->pcm.iterate_row(i)) {
-                            if (e.bit_to_check_msg <= 0) {
+                            if (e.bit_to_check_msg < 0) {
                                 total_sgn += 1;
                             }
                             e.check_to_bit_msg = temp;
@@ -153,7 +167,7 @@ namespace ldpc {
                         temp = std::numeric_limits<double>::max();
                         for (auto &e: this->pcm.reverse_iterate_row(i)) {
                             sgn = total_sgn;
-                            if (e.bit_to_check_msg <= 0) {
+                            if (e.bit_to_check_msg < 0) {
                                 sgn += 1;
                             }
                             if (temp < e.check_to_bit_msg) {
@@ -181,7 +195,7 @@ namespace ldpc {
 
                         //make hard decision on basis of log probability ratio for bit i
                         this->log_prob_ratios[i] = temp;
-                        if (temp <= 0) {
+                        if (temp < 0) {
                             this->decoding[i] = 1;
                             for (auto &e: this->pcm.iterate_column(i)) {
                                 this->candidate_syndrome[e.row_index] ^= 1;
@@ -299,7 +313,7 @@ namespace ldpc {
                                 for (auto &e: this->pcm.iterate_row(i)) {
                                     // ignore fixed bits
                                     if (bit_masks[e.col_index] != -1) continue;
-                                    if (e.bit_to_check_msg <= 0) {
+                                    if (e.bit_to_check_msg < 0) {
                                         total_sgn += 1;
                                     }
                                     e.check_to_bit_msg = temp;
@@ -314,7 +328,7 @@ namespace ldpc {
                                     // ignore fixed bits
                                     if (bit_masks[e.col_index] != -1) continue;
                                     sgn = total_sgn;
-                                    if (e.bit_to_check_msg <= 0) {
+                                    if (e.bit_to_check_msg < 0) {
                                         sgn += 1;
                                     }
                                     if (temp < e.check_to_bit_msg) {
@@ -343,7 +357,7 @@ namespace ldpc {
 
                                 //make hard decision on basis of log probability ratio for bit i
                                 this->log_prob_ratios[i] = temp;
-                                if (temp <= 0) {
+                                if (temp < 0) {
                                     cur_decoding[i] = 1;
                                     for (auto &e: this->pcm.iterate_column(i)) {
                                         this->candidate_syndrome[e.row_index] ^= 1;
