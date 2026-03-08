@@ -93,6 +93,7 @@ cdef class BeamSearchDecoderBase:
         num_results=kwargs.get("num_results",1)
         initial_iters=kwargs.get("initial_iters",30)
         iters_per_round=kwargs.get("iters_per_round",20)
+        warm_start_children=kwargs.get("warm_start_children", True)
         channel_probs = kwargs.get("channel_probs", [None])
 
         """
@@ -120,7 +121,7 @@ cdef class BeamSearchDecoderBase:
 
 
         ## initialise the decoder with default values
-        self.bpd = new BeamSearchDecoderCpp(self.pcm[0],self._error_channel,10,8,1,30,20)
+        self.bpd = new BeamSearchDecoderCpp(self.pcm[0],self._error_channel,10,8,1,30,20,True)
 
         ## set the decoder parameters
         self.max_rounds = max_rounds
@@ -128,6 +129,7 @@ cdef class BeamSearchDecoderBase:
         self.num_results = num_results
         self.initial_iters = initial_iters
         self.iters_per_round = iters_per_round
+        self.warm_start_children = warm_start_children
 
         if error_channel is not None:
             self.error_channel = error_channel
@@ -372,6 +374,26 @@ cdef class BeamSearchDecoderBase:
             raise ValueError(f"iters_per_round input parameter must be a positive int. Not {value}.")
         self.bpd.iters_per_round = value
 
+    @property
+    def warm_start_children(self) -> bool:
+        """
+        Returns whether child paths warm-start from the parent bit-to-check messages.
+
+        Returns:
+            bool: True for warm child restarts, False for cold child restarts.
+        """
+        return self.bpd.warm_start_children
+
+    @warm_start_children.setter
+    def warm_start_children(self, value) -> None:
+        """
+        Sets whether child paths warm-start from the parent bit-to-check messages.
+
+        Args:
+            value: Bool-like flag. True enables warm child restarts, False uses cold restarts.
+        """
+        self.bpd.warm_start_children = True if value else False
+
 
 cdef class BeamSearchDecoder(BeamSearchDecoderBase):
     """
@@ -392,7 +414,7 @@ cdef class BeamSearchDecoder(BeamSearchDecoderBase):
     def __cinit__(self, pcm: Union[np.ndarray, scipy.sparse.spmatrix],
                  error_channel: Optional[Union[np.ndarray,List[float]]] = None, max_rounds: Optional[int] = 10,
                  beam_width: Optional[int] = 8, num_results: Optional[int] = 1, initial_iters: Optional[int] = 30,
-                 iters_per_round: Optional[int] = 20, **kwargs):
+                 iters_per_round: Optional[int] = 20, warm_start_children: Optional[bool] = True, **kwargs):
 
         for key in kwargs.keys():
             if key not in ["channel_probs"]:
@@ -403,9 +425,9 @@ cdef class BeamSearchDecoder(BeamSearchDecoderBase):
     def __init__(self, pcm: Union[np.ndarray, scipy.sparse.spmatrix],
                  error_channel: Optional[Union[np.ndarray,List[float]]] = None, max_rounds: Optional[int] = 10,
                  beam_width: Optional[int] = 8, num_results: Optional[int] = 1, initial_iters: Optional[int] = 30,
-                 iters_per_round: Optional[int] = 20, **kwargs):
+                 iters_per_round: Optional[int] = 20, warm_start_children: Optional[bool] = True, **kwargs):
 
-        pass
+        self.warm_start_children = warm_start_children
 
     def decode(self, input_vector: np.ndarray) -> np.ndarray:
         """

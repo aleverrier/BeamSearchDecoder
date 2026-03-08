@@ -55,6 +55,7 @@ namespace ldpc {
             int num_results;
             int initial_iters;
             int iters_per_round;
+            bool warm_start_children;
             std::vector<uint8_t> decoding;
             std::vector<uint8_t> candidate_syndrome;
 
@@ -71,10 +72,11 @@ namespace ldpc {
                     int beam_width = 8,
                     int num_results = 1,
                     int initial_iters = 30,
-                    int iters_per_round = 20) :
+                    int iters_per_round = 20,
+                    bool warm_start_children = true) :
                     pcm(parity_check_matrix), channel_probabilities(std::move(channel_probabilities)),
                     check_count(pcm.m), bit_count(pcm.n), max_rounds(max_rounds), beam_width(beam_width), num_results(num_results),
-                    initial_iters(initial_iters), iters_per_round(iters_per_round),
+                    initial_iters(initial_iters), iters_per_round(iters_per_round), warm_start_children(warm_start_children),
                     iterations(0), decode_calls(0) //the parity check matrix is passed in by reference
             {
 
@@ -283,7 +285,7 @@ namespace ldpc {
                                 }
                             }
                         }
-                        // Initialize bit_to_check_msg from the best paths in the previous round
+                        // Warm-start from the parent path or cold-start from the channel prior.
                         msg_idx = 0;
                         for (int i = 0; i < this->bit_count; i++) {
                             if (bit_masks[i] != -1) {
@@ -291,7 +293,11 @@ namespace ldpc {
                                 continue;
                             }
                             for (auto &e: this->pcm.iterate_column(i)) {
-                                e.bit_to_check_msg = edge_msgs[start + list_ele][msg_idx];
+                                if (this->warm_start_children) {
+                                    e.bit_to_check_msg = edge_msgs[start + list_ele][msg_idx];
+                                } else {
+                                    e.bit_to_check_msg = this->initial_log_prob_ratios[i];
+                                }
                                 msg_idx++;
                             }
                         }
