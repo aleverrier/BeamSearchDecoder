@@ -61,6 +61,10 @@ namespace ldpc {
             double child_restart_local_shell_alpha_radius1;
             double child_restart_local_shell_alpha_radius2;
             double child_restart_local_shell_alpha_far;
+            bool child_restart_adaptive_near_clamp;
+            int child_restart_adaptive_flip_threshold;
+            double child_restart_adaptive_flip_penalty;
+            double child_restart_adaptive_disagree_penalty;
             std::vector<uint8_t> decoding;
             std::vector<uint8_t> candidate_syndrome;
             std::vector<std::vector<uint8_t>> child_restart_adjacent_checks_by_bit;
@@ -85,7 +89,11 @@ namespace ldpc {
                     bool child_restart_local_shells = false,
                     double child_restart_local_shell_alpha_radius1 = 0.0,
                     double child_restart_local_shell_alpha_radius2 = 0.5,
-                    double child_restart_local_shell_alpha_far = 1.0) :
+                    double child_restart_local_shell_alpha_far = 1.0,
+                    bool child_restart_adaptive_near_clamp = false,
+                    int child_restart_adaptive_flip_threshold = 2,
+                    double child_restart_adaptive_flip_penalty = 0.25,
+                    double child_restart_adaptive_disagree_penalty = 0.5) :
                     pcm(parity_check_matrix), channel_probabilities(std::move(channel_probabilities)),
                     check_count(pcm.m), bit_count(pcm.n), max_rounds(max_rounds), beam_width(beam_width), num_results(num_results),
                     initial_iters(initial_iters), iters_per_round(iters_per_round), warm_start_children(warm_start_children),
@@ -93,6 +101,10 @@ namespace ldpc {
                     child_restart_local_shell_alpha_radius1(child_restart_local_shell_alpha_radius1),
                     child_restart_local_shell_alpha_radius2(child_restart_local_shell_alpha_radius2),
                     child_restart_local_shell_alpha_far(child_restart_local_shell_alpha_far),
+                    child_restart_adaptive_near_clamp(child_restart_adaptive_near_clamp),
+                    child_restart_adaptive_flip_threshold(child_restart_adaptive_flip_threshold),
+                    child_restart_adaptive_flip_penalty(child_restart_adaptive_flip_penalty),
+                    child_restart_adaptive_disagree_penalty(child_restart_adaptive_disagree_penalty),
                     iterations(0), decode_calls(0) //the parity check matrix is passed in by reference
             {
 
@@ -137,25 +149,62 @@ namespace ldpc {
                 }
             }
 
-            inline double child_restart_alpha_for_edge(int clamp_bit, int bit, int check) const {
-                if (!this->child_restart_local_shells) {
-                    return this->child_restart_alpha;
-                }
+            inline int child_restart_shell_for_edge(int clamp_bit, int bit, int check) const {
                 if (clamp_bit < 0 || clamp_bit >= this->bit_count) {
-                    return this->child_restart_alpha;
+                    return 3;
                 }
                 if (bit == clamp_bit) {
-                    return this->child_restart_local_shell_alpha_radius1;
+                    return 1;
                 }
                 if (check >= 0 &&
                     check < this->check_count &&
                     this->child_restart_adjacent_checks_by_bit[clamp_bit][check]) {
-                    return this->child_restart_local_shell_alpha_radius1;
+                    return 1;
                 }
                 if (this->child_restart_shell2_bits_by_bit[clamp_bit][bit]) {
-                    return this->child_restart_local_shell_alpha_radius2;
+                    return 2;
                 }
-                return this->child_restart_local_shell_alpha_far;
+                return 3;
+            }
+
+            inline double child_restart_near_clamp_penalty(int flip_count, bool force_disagrees) const {
+                if (!this->child_restart_adaptive_near_clamp) {
+                    return 0.0;
+                }
+                double penalty = 0.0;
+                if (this->child_restart_adaptive_flip_penalty > 0.0 && this->child_restart_adaptive_flip_threshold > 0) {
+                    const double flip_frac = std::min(
+                            1.0,
+                            static_cast<double>(std::max(0, flip_count)) /
+                                    static_cast<double>(this->child_restart_adaptive_flip_threshold));
+                    penalty += this->child_restart_adaptive_flip_penalty * flip_frac;
+                }
+                if (force_disagrees) {
+                    penalty += this->child_restart_adaptive_disagree_penalty;
+                }
+                return std::min(1.0, std::max(0.0, penalty));
+            }
+
+            inline double child_restart_alpha_for_edge(
+                    int clamp_bit,
+                    int bit,
+                    int check,
+                    int parent_flip_count,
+                    bool force_disagrees) const {
+                if (!this->child_restart_local_shells) {
+                    return this->child_restart_alpha;
+                }
+                const int shell = this->child_restart_shell_for_edge(clamp_bit, bit, check);
+                double alpha = this->child_restart_local_shell_alpha_far;
+                if (shell == 1) {
+                    alpha = this->child_restart_local_shell_alpha_radius1;
+                } else if (shell == 2) {
+                    alpha = this->child_restart_local_shell_alpha_radius2;
+                }
+                if (shell <= 2) {
+                    alpha = std::max(0.0, alpha - this->child_restart_near_clamp_penalty(parent_flip_count, force_disagrees));
+                }
+                return alpha;
             }
 
             void initialise_log_domain_bp() {
@@ -200,8 +249,13 @@ namespace ldpc {
                 std::vector<std::vector<int>> fixed_indices(4 * this->beam_width, std::vector<int>(this->max_rounds + 1, 0));
                 std::vector<std::vector<int>> fixed_values(4 * this->beam_width, std::vector<int>(this->max_rounds + 1, 0));
                 std::vector<int> converged_value(4 * this->beam_width, -1);
+                std::vector<int> branch_flip_counts(4 * this->beam_width, 0);
+                std::vector<int> branch_posterior_bits(4 * this->beam_width, 0);
                 std::vector<int> explore_list;
                 std::vector<uint8_t> cur_decoding(this->bit_count, 0);
+                std::vector<int> sign_flip_counts(this->bit_count, 0);
+                std::vector<int> prev_sign(this->bit_count, 0);
+                std::vector<uint8_t> prev_sign_valid(this->bit_count, 0);
                 int start = 0, next_start = 2 * this->beam_width;
                 double min_dec_weight = std::numeric_limits<double>::max();
                 double cur_dec_weight;
@@ -260,6 +314,12 @@ namespace ldpc {
 
                         //make hard decision on basis of log probability ratio for bit i
                         this->log_prob_ratios[i] = temp;
+                        const int cur_sign = (temp < 0) ? 1 : 0;
+                        if (prev_sign_valid[i] && cur_sign != prev_sign[i]) {
+                            sign_flip_counts[i] += 1;
+                        }
+                        prev_sign_valid[i] = 1;
+                        prev_sign[i] = cur_sign;
                         if (temp < 0) {
                             this->decoding[i] = 1;
                             for (auto &e: this->pcm.iterate_column(i)) {
@@ -317,6 +377,8 @@ namespace ldpc {
                     }
                 }
                 fixed_indices[0][0] = min_idx;
+                branch_flip_counts[0] = sign_flip_counts[min_idx];
+                branch_posterior_bits[0] = this->decoding[min_idx];
                 if (this->converge) {
                     converged_value[0] = cur_decoding[min_idx];
                 } else {
@@ -350,6 +412,11 @@ namespace ldpc {
                         }
                         // Warm-start from the parent path or cold-start from the channel prior.
                         const int clamp_bit = fixed_indices[start + list_ele][round];
+                        const int parent_flip_count = branch_flip_counts[start + list_ele];
+                        const bool force_disagrees = (bit_val != branch_posterior_bits[start + list_ele]);
+                        sign_flip_counts.assign(this->bit_count, 0);
+                        prev_sign.assign(this->bit_count, 0);
+                        prev_sign_valid.assign(this->bit_count, 0);
                         msg_idx = 0;
                         for (int i = 0; i < this->bit_count; i++) {
                             if (bit_masks[i] != -1) {
@@ -357,7 +424,12 @@ namespace ldpc {
                                 continue;
                             }
                             for (auto &e: this->pcm.iterate_column(i)) {
-                                const double alpha = this->child_restart_alpha_for_edge(clamp_bit, i, e.row_index);
+                                const double alpha = this->child_restart_alpha_for_edge(
+                                        clamp_bit,
+                                        i,
+                                        e.row_index,
+                                        parent_flip_count,
+                                        force_disagrees);
                                 const double parent_msg = edge_msgs[start + list_ele][msg_idx];
                                 const double base_msg = this->initial_log_prob_ratios[i];
                                 e.bit_to_check_msg = (alpha * parent_msg) + ((1.0 - alpha) * base_msg);
@@ -426,6 +498,12 @@ namespace ldpc {
 
                                 //make hard decision on basis of log probability ratio for bit i
                                 this->log_prob_ratios[i] = temp;
+                                const int cur_sign = (temp < 0) ? 1 : 0;
+                                if (prev_sign_valid[i] && cur_sign != prev_sign[i]) {
+                                    sign_flip_counts[i] += 1;
+                                }
+                                prev_sign_valid[i] = 1;
+                                prev_sign[i] = cur_sign;
                                 if (temp < 0) {
                                     cur_decoding[i] = 1;
                                     for (auto &e: this->pcm.iterate_column(i)) {
@@ -516,6 +594,8 @@ namespace ldpc {
                             }
                         }
                         fixed_indices[next_start + store_idx][round + 1] = min_idx;
+                        branch_flip_counts[next_start + store_idx] = sign_flip_counts[min_idx];
+                        branch_posterior_bits[next_start + store_idx] = cur_decoding[min_idx];
                         if (this->converge) {
                             converged_value[next_start + store_idx] = cur_decoding[min_idx];
                         } else {

@@ -99,6 +99,10 @@ cdef class BeamSearchDecoderBase:
         child_restart_local_shell_alpha_radius1=kwargs.get("child_restart_local_shell_alpha_radius1", 0.0)
         child_restart_local_shell_alpha_radius2=kwargs.get("child_restart_local_shell_alpha_radius2", 0.5)
         child_restart_local_shell_alpha_far=kwargs.get("child_restart_local_shell_alpha_far", 1.0)
+        child_restart_adaptive_near_clamp=kwargs.get("child_restart_adaptive_near_clamp", False)
+        child_restart_adaptive_flip_threshold=kwargs.get("child_restart_adaptive_flip_threshold", 2)
+        child_restart_adaptive_flip_penalty=kwargs.get("child_restart_adaptive_flip_penalty", 0.25)
+        child_restart_adaptive_disagree_penalty=kwargs.get("child_restart_adaptive_disagree_penalty", 0.5)
         channel_probs = kwargs.get("channel_probs", [None])
 
         """
@@ -126,7 +130,7 @@ cdef class BeamSearchDecoderBase:
 
 
         ## initialise the decoder with default values
-        self.bpd = new BeamSearchDecoderCpp(self.pcm[0],self._error_channel,10,8,1,30,20,True,1.0,False,0.0,0.5,1.0)
+        self.bpd = new BeamSearchDecoderCpp(self.pcm[0],self._error_channel,10,8,1,30,20,True,1.0,False,0.0,0.5,1.0,False,2,0.25,0.5)
 
         ## set the decoder parameters
         self.max_rounds = max_rounds
@@ -142,6 +146,10 @@ cdef class BeamSearchDecoderBase:
         self.child_restart_local_shell_alpha_radius1 = child_restart_local_shell_alpha_radius1
         self.child_restart_local_shell_alpha_radius2 = child_restart_local_shell_alpha_radius2
         self.child_restart_local_shell_alpha_far = child_restart_local_shell_alpha_far
+        self.child_restart_adaptive_near_clamp = child_restart_adaptive_near_clamp
+        self.child_restart_adaptive_flip_threshold = child_restart_adaptive_flip_threshold
+        self.child_restart_adaptive_flip_penalty = child_restart_adaptive_flip_penalty
+        self.child_restart_adaptive_disagree_penalty = child_restart_adaptive_disagree_penalty
 
         if error_channel is not None:
             self.error_channel = error_channel
@@ -489,6 +497,50 @@ cdef class BeamSearchDecoderBase:
             raise ValueError(f"child_restart_local_shell_alpha_far must be in [0,1]. Not {value}.")
         self.bpd.child_restart_local_shell_alpha_far = alpha
 
+    @property
+    def child_restart_adaptive_near_clamp(self) -> bool:
+        return self.bpd.child_restart_adaptive_near_clamp
+
+    @child_restart_adaptive_near_clamp.setter
+    def child_restart_adaptive_near_clamp(self, value) -> None:
+        self.bpd.child_restart_adaptive_near_clamp = True if value else False
+
+    @property
+    def child_restart_adaptive_flip_threshold(self) -> int:
+        return self.bpd.child_restart_adaptive_flip_threshold
+
+    @child_restart_adaptive_flip_threshold.setter
+    def child_restart_adaptive_flip_threshold(self, value) -> None:
+        cdef int threshold
+        threshold = int(value)
+        if threshold < 1:
+            raise ValueError(f"child_restart_adaptive_flip_threshold must be >=1. Not {value}.")
+        self.bpd.child_restart_adaptive_flip_threshold = threshold
+
+    @property
+    def child_restart_adaptive_flip_penalty(self) -> float:
+        return self.bpd.child_restart_adaptive_flip_penalty
+
+    @child_restart_adaptive_flip_penalty.setter
+    def child_restart_adaptive_flip_penalty(self, value) -> None:
+        cdef double penalty
+        penalty = float(value)
+        if penalty < 0.0 or penalty > 1.0:
+            raise ValueError(f"child_restart_adaptive_flip_penalty must be in [0,1]. Not {value}.")
+        self.bpd.child_restart_adaptive_flip_penalty = penalty
+
+    @property
+    def child_restart_adaptive_disagree_penalty(self) -> float:
+        return self.bpd.child_restart_adaptive_disagree_penalty
+
+    @child_restart_adaptive_disagree_penalty.setter
+    def child_restart_adaptive_disagree_penalty(self, value) -> None:
+        cdef double penalty
+        penalty = float(value)
+        if penalty < 0.0 or penalty > 1.0:
+            raise ValueError(f"child_restart_adaptive_disagree_penalty must be in [0,1]. Not {value}.")
+        self.bpd.child_restart_adaptive_disagree_penalty = penalty
+
 
 cdef class BeamSearchDecoder(BeamSearchDecoderBase):
     """
@@ -515,6 +567,10 @@ cdef class BeamSearchDecoder(BeamSearchDecoderBase):
                  child_restart_local_shell_alpha_radius1: Optional[float] = 0.0,
                  child_restart_local_shell_alpha_radius2: Optional[float] = 0.5,
                  child_restart_local_shell_alpha_far: Optional[float] = 1.0,
+                 child_restart_adaptive_near_clamp: Optional[bool] = False,
+                 child_restart_adaptive_flip_threshold: Optional[int] = 2,
+                 child_restart_adaptive_flip_penalty: Optional[float] = 0.25,
+                 child_restart_adaptive_disagree_penalty: Optional[float] = 0.5,
                  **kwargs):
 
         for key in kwargs.keys():
@@ -532,6 +588,10 @@ cdef class BeamSearchDecoder(BeamSearchDecoderBase):
                  child_restart_local_shell_alpha_radius1: Optional[float] = 0.0,
                  child_restart_local_shell_alpha_radius2: Optional[float] = 0.5,
                  child_restart_local_shell_alpha_far: Optional[float] = 1.0,
+                 child_restart_adaptive_near_clamp: Optional[bool] = False,
+                 child_restart_adaptive_flip_threshold: Optional[int] = 2,
+                 child_restart_adaptive_flip_penalty: Optional[float] = 0.25,
+                 child_restart_adaptive_disagree_penalty: Optional[float] = 0.5,
                  **kwargs):
 
         if child_restart_alpha is None:
@@ -542,6 +602,10 @@ cdef class BeamSearchDecoder(BeamSearchDecoderBase):
         self.child_restart_local_shell_alpha_radius1 = child_restart_local_shell_alpha_radius1
         self.child_restart_local_shell_alpha_radius2 = child_restart_local_shell_alpha_radius2
         self.child_restart_local_shell_alpha_far = child_restart_local_shell_alpha_far
+        self.child_restart_adaptive_near_clamp = child_restart_adaptive_near_clamp
+        self.child_restart_adaptive_flip_threshold = child_restart_adaptive_flip_threshold
+        self.child_restart_adaptive_flip_penalty = child_restart_adaptive_flip_penalty
+        self.child_restart_adaptive_disagree_penalty = child_restart_adaptive_disagree_penalty
 
     def decode(self, input_vector: np.ndarray) -> np.ndarray:
         """

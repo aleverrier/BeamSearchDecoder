@@ -267,6 +267,30 @@ class BeamSearchDecoderBase:
     @child_restart_local_shell_alpha_far.setter
     def child_restart_local_shell_alpha_far(self, value) -> None: ...
 
+    @property
+    def child_restart_adaptive_near_clamp(self) -> bool: ...
+
+    @child_restart_adaptive_near_clamp.setter
+    def child_restart_adaptive_near_clamp(self, value) -> None: ...
+
+    @property
+    def child_restart_adaptive_flip_threshold(self) -> int: ...
+
+    @child_restart_adaptive_flip_threshold.setter
+    def child_restart_adaptive_flip_threshold(self, value) -> None: ...
+
+    @property
+    def child_restart_adaptive_flip_penalty(self) -> float: ...
+
+    @child_restart_adaptive_flip_penalty.setter
+    def child_restart_adaptive_flip_penalty(self, value) -> None: ...
+
+    @property
+    def child_restart_adaptive_disagree_penalty(self) -> float: ...
+
+    @child_restart_adaptive_disagree_penalty.setter
+    def child_restart_adaptive_disagree_penalty(self, value) -> None: ...
+
 
 class BeamSearchDecoder(BeamSearchDecoderBase):
     """
@@ -293,6 +317,10 @@ class BeamSearchDecoder(BeamSearchDecoderBase):
                  child_restart_local_shell_alpha_radius1: Optional[float] = 0.0,
                  child_restart_local_shell_alpha_radius2: Optional[float] = 0.5,
                  child_restart_local_shell_alpha_far: Optional[float] = 1.0,
+                 child_restart_adaptive_near_clamp: Optional[bool] = False,
+                 child_restart_adaptive_flip_threshold: Optional[int] = 2,
+                 child_restart_adaptive_flip_penalty: Optional[float] = 0.25,
+                 child_restart_adaptive_disagree_penalty: Optional[float] = 0.5,
                  **kwargs): ...
 
     def __init__(self, pcm: Union[np.ndarray, scipy.sparse.spmatrix],
@@ -304,6 +332,10 @@ class BeamSearchDecoder(BeamSearchDecoderBase):
                  child_restart_local_shell_alpha_radius1: Optional[float] = 0.0,
                  child_restart_local_shell_alpha_radius2: Optional[float] = 0.5,
                  child_restart_local_shell_alpha_far: Optional[float] = 1.0,
+                 child_restart_adaptive_near_clamp: Optional[bool] = False,
+                 child_restart_adaptive_flip_threshold: Optional[int] = 2,
+                 child_restart_adaptive_flip_penalty: Optional[float] = 0.25,
+                 child_restart_adaptive_disagree_penalty: Optional[float] = 0.5,
                  **kwargs): ...
 
     def decode(self, input_vector: np.ndarray) -> np.ndarray:
