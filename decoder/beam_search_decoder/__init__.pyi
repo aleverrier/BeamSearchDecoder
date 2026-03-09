@@ -194,6 +194,43 @@ class BeamSearchDecoderBase:
             ValueError: If value is not a positive integer.
         """
 
+    @property
+    def warm_start_children(self) -> bool:
+        """
+        Returns whether child paths warm-start from the parent bit-to-check messages.
+
+        Returns:
+            bool: True for warm child restarts, False for cold child restarts.
+        """
+
+    @warm_start_children.setter
+    def warm_start_children(self, value) -> None:
+        """
+        Sets whether child paths warm-start from the parent bit-to-check messages.
+
+        Args:
+            value: Bool-like flag. True enables warm child restarts, False uses cold restarts.
+        """
+
+    @property
+    def child_restart_alpha(self) -> float:
+        """
+        Returns the child restart mix coefficient.
+
+        Returns:
+            float: 1.0 uses the parent messages, 0.0 cold-starts from the channel prior,
+            intermediate values linearly interpolate between the two.
+        """
+
+    @child_restart_alpha.setter
+    def child_restart_alpha(self, value) -> None:
+        """
+        Sets the child restart mix coefficient.
+
+        Args:
+            value: Float in [0, 1]. 1 keeps warm restarts, 0 uses cold restarts.
+        """
+
 
 class BeamSearchDecoder(BeamSearchDecoderBase):
     """
@@ -214,12 +251,14 @@ class BeamSearchDecoder(BeamSearchDecoderBase):
     def __cinit__(self, pcm: Union[np.ndarray, scipy.sparse.spmatrix],
                  error_channel: Optional[Union[np.ndarray,List[float]]] = None, max_rounds: Optional[int] = 10,
                  beam_width: Optional[int] = 8, num_results: Optional[int] = 1, initial_iters: Optional[int] = 30,
-                 iters_per_round: Optional[int] = 20, **kwargs): ...
+                 iters_per_round: Optional[int] = 20, warm_start_children: Optional[bool] = True,
+                 child_restart_alpha: Optional[float] = None, **kwargs): ...
 
     def __init__(self, pcm: Union[np.ndarray, scipy.sparse.spmatrix],
                  error_channel: Optional[Union[np.ndarray,List[float]]] = None, max_rounds: Optional[int] = 10,
                  beam_width: Optional[int] = 8, num_results: Optional[int] = 1, initial_iters: Optional[int] = 30,
-                 iters_per_round: Optional[int] = 20, **kwargs): ...
+                 iters_per_round: Optional[int] = 20, warm_start_children: Optional[bool] = True,
+                 child_restart_alpha: Optional[float] = None, **kwargs): ...
 
     def decode(self, input_vector: np.ndarray) -> np.ndarray:
         """
