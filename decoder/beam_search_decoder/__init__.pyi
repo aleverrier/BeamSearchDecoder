@@ -231,6 +231,42 @@ class BeamSearchDecoderBase:
             value: Float in [0, 1]. 1 keeps warm restarts, 0 uses cold restarts.
         """
 
+    @property
+    def child_restart_local_shells(self) -> bool:
+        """
+        Returns whether child restarts use the local Tanner-shell interpolation policy.
+
+        Returns:
+            bool: True when shell-local interpolation is enabled.
+        """
+
+    @child_restart_local_shells.setter
+    def child_restart_local_shells(self, value) -> None:
+        """
+        Enables or disables shell-local child restart interpolation.
+
+        Args:
+            value: Bool-like flag.
+        """
+
+    @property
+    def child_restart_local_shell_alpha_radius1(self) -> float: ...
+
+    @child_restart_local_shell_alpha_radius1.setter
+    def child_restart_local_shell_alpha_radius1(self, value) -> None: ...
+
+    @property
+    def child_restart_local_shell_alpha_radius2(self) -> float: ...
+
+    @child_restart_local_shell_alpha_radius2.setter
+    def child_restart_local_shell_alpha_radius2(self, value) -> None: ...
+
+    @property
+    def child_restart_local_shell_alpha_far(self) -> float: ...
+
+    @child_restart_local_shell_alpha_far.setter
+    def child_restart_local_shell_alpha_far(self, value) -> None: ...
+
 
 class BeamSearchDecoder(BeamSearchDecoderBase):
     """
@@ -252,13 +288,23 @@ class BeamSearchDecoder(BeamSearchDecoderBase):
                  error_channel: Optional[Union[np.ndarray,List[float]]] = None, max_rounds: Optional[int] = 10,
                  beam_width: Optional[int] = 8, num_results: Optional[int] = 1, initial_iters: Optional[int] = 30,
                  iters_per_round: Optional[int] = 20, warm_start_children: Optional[bool] = True,
-                 child_restart_alpha: Optional[float] = None, **kwargs): ...
+                 child_restart_alpha: Optional[float] = None,
+                 child_restart_local_shells: Optional[bool] = False,
+                 child_restart_local_shell_alpha_radius1: Optional[float] = 0.0,
+                 child_restart_local_shell_alpha_radius2: Optional[float] = 0.5,
+                 child_restart_local_shell_alpha_far: Optional[float] = 1.0,
+                 **kwargs): ...
 
     def __init__(self, pcm: Union[np.ndarray, scipy.sparse.spmatrix],
                  error_channel: Optional[Union[np.ndarray,List[float]]] = None, max_rounds: Optional[int] = 10,
                  beam_width: Optional[int] = 8, num_results: Optional[int] = 1, initial_iters: Optional[int] = 30,
                  iters_per_round: Optional[int] = 20, warm_start_children: Optional[bool] = True,
-                 child_restart_alpha: Optional[float] = None, **kwargs): ...
+                 child_restart_alpha: Optional[float] = None,
+                 child_restart_local_shells: Optional[bool] = False,
+                 child_restart_local_shell_alpha_radius1: Optional[float] = 0.0,
+                 child_restart_local_shell_alpha_radius2: Optional[float] = 0.5,
+                 child_restart_local_shell_alpha_far: Optional[float] = 1.0,
+                 **kwargs): ...
 
     def decode(self, input_vector: np.ndarray) -> np.ndarray:
         """

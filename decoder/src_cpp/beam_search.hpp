@@ -57,8 +57,14 @@ namespace ldpc {
             int iters_per_round;
             bool warm_start_children;
             double child_restart_alpha;
+            bool child_restart_local_shells;
+            double child_restart_local_shell_alpha_radius1;
+            double child_restart_local_shell_alpha_radius2;
+            double child_restart_local_shell_alpha_far;
             std::vector<uint8_t> decoding;
             std::vector<uint8_t> candidate_syndrome;
+            std::vector<std::vector<uint8_t>> child_restart_adjacent_checks_by_bit;
+            std::vector<std::vector<uint8_t>> child_restart_shell2_bits_by_bit;
 
             std::vector<double> log_prob_ratios;
             std::vector<double> initial_log_prob_ratios;
@@ -75,11 +81,18 @@ namespace ldpc {
                     int initial_iters = 30,
                     int iters_per_round = 20,
                     bool warm_start_children = true,
-                    double child_restart_alpha = 1.0) :
+                    double child_restart_alpha = 1.0,
+                    bool child_restart_local_shells = false,
+                    double child_restart_local_shell_alpha_radius1 = 0.0,
+                    double child_restart_local_shell_alpha_radius2 = 0.5,
+                    double child_restart_local_shell_alpha_far = 1.0) :
                     pcm(parity_check_matrix), channel_probabilities(std::move(channel_probabilities)),
                     check_count(pcm.m), bit_count(pcm.n), max_rounds(max_rounds), beam_width(beam_width), num_results(num_results),
                     initial_iters(initial_iters), iters_per_round(iters_per_round), warm_start_children(warm_start_children),
-                    child_restart_alpha(child_restart_alpha),
+                    child_restart_alpha(child_restart_alpha), child_restart_local_shells(child_restart_local_shells),
+                    child_restart_local_shell_alpha_radius1(child_restart_local_shell_alpha_radius1),
+                    child_restart_local_shell_alpha_radius2(child_restart_local_shell_alpha_radius2),
+                    child_restart_local_shell_alpha_far(child_restart_local_shell_alpha_far),
                     iterations(0), decode_calls(0) //the parity check matrix is passed in by reference
             {
 
@@ -94,9 +107,56 @@ namespace ldpc {
                     throw std::runtime_error(
                             "Channel probabilities vector must have length equal to the number of bits");
                 }
+
+                this->prepare_child_restart_shell_metadata();
             }
 
             ~BeamSearchDecoder() = default;
+
+            void prepare_child_restart_shell_metadata() {
+                this->child_restart_adjacent_checks_by_bit.assign(
+                        this->bit_count,
+                        std::vector<uint8_t>(this->check_count, 0));
+                this->child_restart_shell2_bits_by_bit.assign(
+                        this->bit_count,
+                        std::vector<uint8_t>(this->bit_count, 0));
+
+                for (int bit = 0; bit < this->bit_count; bit++) {
+                    for (auto &e: this->pcm.iterate_column(bit)) {
+                        const int check = e.row_index;
+                        this->child_restart_adjacent_checks_by_bit[bit][check] = 1;
+                    }
+                    for (int check = 0; check < this->check_count; check++) {
+                        if (!this->child_restart_adjacent_checks_by_bit[bit][check]) continue;
+                        for (auto &e: this->pcm.iterate_row(check)) {
+                            const int other_bit = e.col_index;
+                            if (other_bit == bit) continue;
+                            this->child_restart_shell2_bits_by_bit[bit][other_bit] = 1;
+                        }
+                    }
+                }
+            }
+
+            inline double child_restart_alpha_for_edge(int clamp_bit, int bit, int check) const {
+                if (!this->child_restart_local_shells) {
+                    return this->child_restart_alpha;
+                }
+                if (clamp_bit < 0 || clamp_bit >= this->bit_count) {
+                    return this->child_restart_alpha;
+                }
+                if (bit == clamp_bit) {
+                    return this->child_restart_local_shell_alpha_radius1;
+                }
+                if (check >= 0 &&
+                    check < this->check_count &&
+                    this->child_restart_adjacent_checks_by_bit[clamp_bit][check]) {
+                    return this->child_restart_local_shell_alpha_radius1;
+                }
+                if (this->child_restart_shell2_bits_by_bit[clamp_bit][bit]) {
+                    return this->child_restart_local_shell_alpha_radius2;
+                }
+                return this->child_restart_local_shell_alpha_far;
+            }
 
             void initialise_log_domain_bp() {
                 // initialise BP
@@ -289,6 +349,7 @@ namespace ldpc {
                             }
                         }
                         // Warm-start from the parent path or cold-start from the channel prior.
+                        const int clamp_bit = fixed_indices[start + list_ele][round];
                         msg_idx = 0;
                         for (int i = 0; i < this->bit_count; i++) {
                             if (bit_masks[i] != -1) {
@@ -296,7 +357,7 @@ namespace ldpc {
                                 continue;
                             }
                             for (auto &e: this->pcm.iterate_column(i)) {
-                                const double alpha = this->child_restart_alpha;
+                                const double alpha = this->child_restart_alpha_for_edge(clamp_bit, i, e.row_index);
                                 const double parent_msg = edge_msgs[start + list_ele][msg_idx];
                                 const double base_msg = this->initial_log_prob_ratios[i];
                                 e.bit_to_check_msg = (alpha * parent_msg) + ((1.0 - alpha) * base_msg);

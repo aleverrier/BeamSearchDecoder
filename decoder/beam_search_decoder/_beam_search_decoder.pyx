@@ -95,6 +95,10 @@ cdef class BeamSearchDecoderBase:
         iters_per_round=kwargs.get("iters_per_round",20)
         warm_start_children=kwargs.get("warm_start_children", True)
         child_restart_alpha=kwargs.get("child_restart_alpha", None)
+        child_restart_local_shells=kwargs.get("child_restart_local_shells", False)
+        child_restart_local_shell_alpha_radius1=kwargs.get("child_restart_local_shell_alpha_radius1", 0.0)
+        child_restart_local_shell_alpha_radius2=kwargs.get("child_restart_local_shell_alpha_radius2", 0.5)
+        child_restart_local_shell_alpha_far=kwargs.get("child_restart_local_shell_alpha_far", 1.0)
         channel_probs = kwargs.get("channel_probs", [None])
 
         """
@@ -122,7 +126,7 @@ cdef class BeamSearchDecoderBase:
 
 
         ## initialise the decoder with default values
-        self.bpd = new BeamSearchDecoderCpp(self.pcm[0],self._error_channel,10,8,1,30,20,True,1.0)
+        self.bpd = new BeamSearchDecoderCpp(self.pcm[0],self._error_channel,10,8,1,30,20,True,1.0,False,0.0,0.5,1.0)
 
         ## set the decoder parameters
         self.max_rounds = max_rounds
@@ -134,6 +138,10 @@ cdef class BeamSearchDecoderBase:
             self.warm_start_children = warm_start_children
         else:
             self.child_restart_alpha = child_restart_alpha
+        self.child_restart_local_shells = child_restart_local_shells
+        self.child_restart_local_shell_alpha_radius1 = child_restart_local_shell_alpha_radius1
+        self.child_restart_local_shell_alpha_radius2 = child_restart_local_shell_alpha_radius2
+        self.child_restart_local_shell_alpha_far = child_restart_local_shell_alpha_far
 
         if error_channel is not None:
             self.error_channel = error_channel
@@ -425,6 +433,62 @@ cdef class BeamSearchDecoderBase:
         self.bpd.child_restart_alpha = alpha
         self.bpd.warm_start_children = True if alpha > 0.0 else False
 
+    @property
+    def child_restart_local_shells(self) -> bool:
+        """
+        Returns whether child restarts use the local Tanner-shell interpolation policy.
+
+        Returns:
+            bool: True when shell-local interpolation is enabled.
+        """
+        return self.bpd.child_restart_local_shells
+
+    @child_restart_local_shells.setter
+    def child_restart_local_shells(self, value) -> None:
+        """
+        Enables or disables shell-local child restart interpolation.
+
+        Args:
+            value: Bool-like flag.
+        """
+        self.bpd.child_restart_local_shells = True if value else False
+
+    @property
+    def child_restart_local_shell_alpha_radius1(self) -> float:
+        return self.bpd.child_restart_local_shell_alpha_radius1
+
+    @child_restart_local_shell_alpha_radius1.setter
+    def child_restart_local_shell_alpha_radius1(self, value) -> None:
+        cdef double alpha
+        alpha = float(value)
+        if alpha < 0.0 or alpha > 1.0:
+            raise ValueError(f"child_restart_local_shell_alpha_radius1 must be in [0,1]. Not {value}.")
+        self.bpd.child_restart_local_shell_alpha_radius1 = alpha
+
+    @property
+    def child_restart_local_shell_alpha_radius2(self) -> float:
+        return self.bpd.child_restart_local_shell_alpha_radius2
+
+    @child_restart_local_shell_alpha_radius2.setter
+    def child_restart_local_shell_alpha_radius2(self, value) -> None:
+        cdef double alpha
+        alpha = float(value)
+        if alpha < 0.0 or alpha > 1.0:
+            raise ValueError(f"child_restart_local_shell_alpha_radius2 must be in [0,1]. Not {value}.")
+        self.bpd.child_restart_local_shell_alpha_radius2 = alpha
+
+    @property
+    def child_restart_local_shell_alpha_far(self) -> float:
+        return self.bpd.child_restart_local_shell_alpha_far
+
+    @child_restart_local_shell_alpha_far.setter
+    def child_restart_local_shell_alpha_far(self, value) -> None:
+        cdef double alpha
+        alpha = float(value)
+        if alpha < 0.0 or alpha > 1.0:
+            raise ValueError(f"child_restart_local_shell_alpha_far must be in [0,1]. Not {value}.")
+        self.bpd.child_restart_local_shell_alpha_far = alpha
+
 
 cdef class BeamSearchDecoder(BeamSearchDecoderBase):
     """
@@ -446,7 +510,12 @@ cdef class BeamSearchDecoder(BeamSearchDecoderBase):
                  error_channel: Optional[Union[np.ndarray,List[float]]] = None, max_rounds: Optional[int] = 10,
                  beam_width: Optional[int] = 8, num_results: Optional[int] = 1, initial_iters: Optional[int] = 30,
                  iters_per_round: Optional[int] = 20, warm_start_children: Optional[bool] = True,
-                 child_restart_alpha: Optional[float] = None, **kwargs):
+                 child_restart_alpha: Optional[float] = None,
+                 child_restart_local_shells: Optional[bool] = False,
+                 child_restart_local_shell_alpha_radius1: Optional[float] = 0.0,
+                 child_restart_local_shell_alpha_radius2: Optional[float] = 0.5,
+                 child_restart_local_shell_alpha_far: Optional[float] = 1.0,
+                 **kwargs):
 
         for key in kwargs.keys():
             if key not in ["channel_probs"]:
@@ -458,12 +527,21 @@ cdef class BeamSearchDecoder(BeamSearchDecoderBase):
                  error_channel: Optional[Union[np.ndarray,List[float]]] = None, max_rounds: Optional[int] = 10,
                  beam_width: Optional[int] = 8, num_results: Optional[int] = 1, initial_iters: Optional[int] = 30,
                  iters_per_round: Optional[int] = 20, warm_start_children: Optional[bool] = True,
-                 child_restart_alpha: Optional[float] = None, **kwargs):
+                 child_restart_alpha: Optional[float] = None,
+                 child_restart_local_shells: Optional[bool] = False,
+                 child_restart_local_shell_alpha_radius1: Optional[float] = 0.0,
+                 child_restart_local_shell_alpha_radius2: Optional[float] = 0.5,
+                 child_restart_local_shell_alpha_far: Optional[float] = 1.0,
+                 **kwargs):
 
         if child_restart_alpha is None:
             self.warm_start_children = warm_start_children
         else:
             self.child_restart_alpha = child_restart_alpha
+        self.child_restart_local_shells = child_restart_local_shells
+        self.child_restart_local_shell_alpha_radius1 = child_restart_local_shell_alpha_radius1
+        self.child_restart_local_shell_alpha_radius2 = child_restart_local_shell_alpha_radius2
+        self.child_restart_local_shell_alpha_far = child_restart_local_shell_alpha_far
 
     def decode(self, input_vector: np.ndarray) -> np.ndarray:
         """

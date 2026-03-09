@@ -37,7 +37,11 @@ cdef extern from "beam_search.hpp" namespace "ldpc::bp":
                 int initial_iters,
                 int iters_per_round,
                 bool warm_start_children,
-                double child_restart_alpha) except +
+                double child_restart_alpha,
+                bool child_restart_local_shells,
+                double child_restart_local_shell_alpha_radius1,
+                double child_restart_local_shell_alpha_radius2,
+                double child_restart_local_shell_alpha_far) except +
             BpSparse& pcm
             vector[double] channel_probabilities
             int check_count
@@ -49,6 +53,10 @@ cdef extern from "beam_search.hpp" namespace "ldpc::bp":
             int iters_per_round
             bool warm_start_children
             double child_restart_alpha
+            bool child_restart_local_shells
+            double child_restart_local_shell_alpha_radius1
+            double child_restart_local_shell_alpha_radius2
+            double child_restart_local_shell_alpha_far
             vector[uint8_t] decoding
             vector[uint8_t] candidate_syndrome
             vector[double] log_prob_ratios
